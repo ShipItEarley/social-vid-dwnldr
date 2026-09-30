@@ -1,0 +1,23 @@
+# Local runtime and history
+.venv*/
+venv/
+.state/
+__pycache__/
+*.py[cod]
+.DS_Store
+
+# Local credentials
+.env
+.env.*
+!.env.example
+cookies.txt
+*.cookies.txt
+
+# Downloaded media and partial transfers
+*.mp4
+*.mov
+*.webm
+*.mkv
+*.m4v
+*.part
+*.ytdl

@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>Video Downloader</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/style.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <main>
+    <header>
+      <div class="brand"><span class="mark" aria-hidden="true">↓</span><span>Video Downloader</span></div>
+      <span id="connection" class="connection">Connecting</span>
+    </header>
+    <section class="workspace" aria-labelledby="heading">
+      <p class="eyebrow">SAVE A VIDEO</p>
+      <h1 id="heading">Paste the link.<br>Keep the video.</h1>
+      <p class="intro">Download Instagram Reels and TikTok videos to your Mac.</p>
+      <form id="download-form">
+        <label for="url">Instagram or TikTok link</label>
+        <div class="input-row">
+          <input id="url" name="url" type="text" inputmode="url" placeholder="Paste an Instagram or TikTok video link" required autocomplete="off" spellcheck="false">
+          <button id="submit" type="submit" disabled>Download video <span aria-hidden="true">↓</span></button>
+        </div>
+        <div class="form-options">
+          <div class="session-option">
+            <label for="browser">Session</label>
+            <select id="browser" name="browser" aria-describedby="session-help">
+              <option value="">Public link</option>
+              <option value="chrome">Use Chrome login</option>
+              <option value="safari">Use Safari login</option>
+              <option value="firefox">Use Firefox login</option>
+              <option value="brave">Use Brave login</option>
+              <option value="edge">Use Edge login</option>
+            </select>
+          </div>
+          <span id="session-help">If a login is needed, choose the browser you’re signed into.</span>
+        </div>
+        <p id="session-note" class="session-note" hidden>The selected browser’s session cookies will be read locally for this download.</p>
+        <p id="form-error" class="form-error" role="alert" hidden></p>
+      </form>
+      <div class="destination-row">
+        <span><span class="folder-icon" aria-hidden="true">↳</span> Save location <strong id="destination">Downloads / Instagram</strong></span>
+        <button class="text-button" id="open-folder" type="button" disabled>Open folder <span aria-hidden="true">↗</span></button>
+      </div>
+    </section>
+    <section class="history" aria-labelledby="history-heading">
+      <div class="section-heading"><h2 id="history-heading">Recent downloads</h2><span id="count">0 videos</span></div>
+      <div id="jobs"></div>
+      <div id="empty" class="empty"><span class="empty-icon" aria-hidden="true">↓</span><p>Your downloads will appear here.</p><span>Paste a link above to save your first video.</span></div>
+    </section>
+    <footer><span>Runs on your Mac</span><span>Original available quality · Local files</span></footer>
+  </main>
+</body>
+</html>
