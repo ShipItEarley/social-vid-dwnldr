@@ -1,10 +1,11 @@
-"""Local Instagram and TikTok downloader. Run with the project's virtualenv Python."""
+"""Local social video downloader. Run with the project's virtualenv Python."""
 import argparse
 import copy
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import mimetypes
+import os
 from pathlib import Path
 import queue
 import re
@@ -13,19 +14,24 @@ import subprocess
 import sys
 import tempfile
 import threading
-from urllib.parse import unquote, urlsplit, quote
+from urllib.parse import parse_qs, unquote, urlsplit, quote
 import webbrowser
 from urllib.error import URLError
 from urllib.request import urlopen
 
+from media_names import short_title, site_name
+
 ROOT = Path(__file__).resolve().parent
+DEFAULT_DESTINATION = Path.home() / 'Documents' / 'Video-Download'
 VIDEO_EXTENSIONS = {'.mp4', '.mov', '.webm', '.mkv', '.m4v'}
+PHOTO_EXTENSIONS = {'.jpg', '.jpeg', '.png', '.webp'}
+MEDIA_EXTENSIONS = VIDEO_EXTENSIONS | PHOTO_EXTENSIONS
 BROWSERS = ('', 'chrome', 'safari', 'firefox', 'edge', 'brave')
 
 
 def normalize_url(value):
     if not isinstance(value, str) or not value.strip() or len(value) > 2048:
-        raise ValueError('Paste an Instagram or TikTok video link.')
+        raise ValueError('Paste an Instagram, TikTok, or YouTube link.')
     value = value.strip()
     if '://' not in value:
         value = 'https://' + value
@@ -33,8 +39,29 @@ def normalize_url(value):
     host = parsed.netloc.lower()
     instagram_hosts = ('instagram.com', 'www.instagram.com', 'm.instagram.com')
     tiktok_hosts = ('tiktok.com', 'www.tiktok.com', 'vm.tiktok.com', 'vt.tiktok.com')
-    if parsed.scheme not in ('http', 'https') or host not in instagram_hosts + tiktok_hosts:
-        raise ValueError('Use a link from instagram.com or tiktok.com.')
+    youtube_hosts = ('youtube.com', 'www.youtube.com', 'm.youtube.com', 'music.youtube.com',
+                     'youtu.be', 'www.youtu.be', 'youtube-nocookie.com', 'www.youtube-nocookie.com')
+    if parsed.scheme not in ('http', 'https') or host not in instagram_hosts + tiktok_hosts + youtube_hosts:
+        raise ValueError('Use a link from instagram.com, tiktok.com, youtube.com, or youtu.be.')
+    if host in youtube_hosts:
+        video_id = ''
+        if host in ('youtu.be', 'www.youtu.be'):
+            match = re.fullmatch(r'/([A-Za-z0-9_-]{11})/?', parsed.path)
+            video_id = match[1] if match else ''
+        elif host in ('youtube-nocookie.com', 'www.youtube-nocookie.com'):
+            match = re.fullmatch(r'/embed/([A-Za-z0-9_-]{11})/?', parsed.path)
+            video_id = match[1] if match else ''
+        elif parsed.path in ('/watch', '/watch/'):
+            values = parse_qs(parsed.query, keep_blank_values=True).get('v', [])
+            if len(values) == 1:
+                video_id = values[0]
+        else:
+            match = re.fullmatch(r'/(?:shorts|embed|live|v)/([A-Za-z0-9_-]{11})/?', parsed.path)
+            video_id = match[1] if match else ''
+        if parsed.path.rstrip('/') == '/embed/videoseries' or not re.fullmatch(r'[A-Za-z0-9_-]{11}', video_id):
+            raise ValueError('Use a YouTube video, Shorts, or youtu.be share link, rather than a channel, playlist, or clip link.')
+        # Always download one full video, ignoring playlist context, timestamps, and tracking.
+        return f'https://www.youtube.com/watch?v={video_id}'
     if host in tiktok_hosts:
         if host in ('vm.tiktok.com', 'vt.tiktok.com'):
             match = re.fullmatch(r'/([A-Za-z0-9_]+)/?', parsed.path)
@@ -44,20 +71,27 @@ def normalize_url(value):
             match = re.fullmatch(r'/t/([A-Za-z0-9_]+)/?', parsed.path)
             if match:
                 return f'https://www.tiktok.com/t/{match[1]}/'
-            match = re.fullmatch(r'/@([A-Za-z0-9_.-]+)/video/(\d+)/?', parsed.path)
+            match = re.fullmatch(r'/@([A-Za-z0-9_.-]+)/(video|photo)/(\d+)/?', parsed.path)
             if match:
-                return f'https://www.tiktok.com/@{match[1]}/video/{match[2]}'
-        raise ValueError('Use a TikTok video link or a short share link, rather than a profile or photo link.')
+                return f'https://www.tiktok.com/@{match[1]}/{match[2]}/{match[3]}'
+        raise ValueError('Use a TikTok video, photo slideshow, or short share link, rather than a profile link.')
+    story = re.fullmatch(r'/stories/([A-Za-z0-9_.]+)(?:/(\d+))?/?', parsed.path)
+    if story:
+        username, story_id = story.groups()
+        if username == 'highlights' and not story_id:
+            raise ValueError('Paste the full Instagram highlight link, including its ID.')
+        suffix = f'{story_id}/' if story_id else ''
+        return f'https://www.instagram.com/stories/{username}/{suffix}'
     match = re.fullmatch(r'/(reel|reels|p|tv)/([A-Za-z0-9_-]+)/?', parsed.path)
     if not match:
-        raise ValueError('Use a Reel or video-post link, rather than a profile or story link.')
+        raise ValueError('Use an Instagram Reel, photo/video post, or story link, rather than a profile link.')
     kind, shortcode = match.groups()
     return f'https://www.instagram.com/{"reel" if kind == "reels" else kind}/{shortcode}/'
 
 
 class ProcessDownloader:
     """Keep slow network/cookie extraction out of the HTTP server."""
-    def __init__(self, timeout=180):
+    def __init__(self, timeout=None):
         self.timeout = timeout
         self.process = None
         self.lock = threading.Lock()
@@ -71,7 +105,10 @@ class ProcessDownloader:
                 self.process = process = subprocess.Popen(
                     [sys.executable, str(ROOT / 'worker.py'), url, str(folder), browser],
                     stdout=subprocess.PIPE, stderr=errors, text=True)
-            timer = threading.Timer(self.timeout, process.kill)
+            timeout = self.timeout
+            if timeout is None:
+                timeout = 1800 if urlsplit(url).hostname == 'www.youtube.com' else 180
+            timer = threading.Timer(timeout, process.kill)
             timer.start()
             error = None
             try:
@@ -98,7 +135,7 @@ class ProcessDownloader:
 
 
 class DownloadManager:
-    def __init__(self, destination, history_path, downloader=None):
+    def __init__(self, destination, history_path, downloader=None, legacy_destination=None):
         self.destination = Path(destination).expanduser().resolve()
         self.destination.mkdir(parents=True, exist_ok=True)
         self.history_path = Path(history_path)
@@ -114,6 +151,11 @@ class DownloadManager:
         except (OSError, ValueError, TypeError, KeyError):
             self.jobs = {}
         for job in self.jobs.values():
+            if 'folder' not in job:
+                folder = self.destination / job['id']
+                if not folder.exists() and legacy_destination is not None:
+                    folder = Path(legacy_destination).expanduser().resolve() / job['id']
+                job['folder'] = str(folder)
             if job.get('status') not in ('complete', 'error'):
                 job.update(status='error', error='Download interrupted when the app closed. Try the link again.')
         self._save()
@@ -143,6 +185,7 @@ class DownloadManager:
             if sum(job['status'] in ('queued', 'reading', 'downloading') for job in self.jobs.values()) >= 10:
                 raise ValueError('The queue is full. Wait for a download to finish.')
             job = dict(id=secrets.token_hex(6), url=url, browser=browser,
+                       folder=str(self.destination / site_name(url)),
                        status='queued', progress=0, files=[], error=None,
                        created_at=datetime.now(timezone.utc).isoformat())
             self.jobs[job['id']] = job
@@ -154,13 +197,49 @@ class DownloadManager:
         with self.lock:
             self.jobs[job_id].update(values)
 
-    def _files(self, job_id):
-        folder = self.destination / job_id
-        return [dict(name=path.name, size=path.stat().st_size,
-                     url=f'/files/{job_id}/{quote(path.name)}')
-                for path in sorted(folder.iterdir())
-                if path.is_file() and not path.is_symlink() and
-                path.suffix.lower() in VIDEO_EXTENSIONS and path.stat().st_size > 0]
+    def folder(self, job_id):
+        folder = Path(self.get(job_id)['folder'])
+        if not folder.is_absolute() or folder.resolve() != folder:
+            raise FileNotFoundError('Download folder moved or is a symbolic link.')
+        return folder
+
+    def _publish_files(self, job_id, staging, files):
+        folder = self.folder(job_id)
+        sources = [source for source in sorted(staging.iterdir())
+                   if not source.is_symlink() and source.is_file()
+                   and source.suffix.lower() in MEDIA_EXTENSIONS and source.stat().st_size > 0]
+        job = self.get(job_id)
+        if sources and job.get('collection_title') and site_name(job['url']) == 'TikTok':
+            title = short_title({'title': job['collection_title']})
+            number = 1
+            while True:
+                collection = folder / (title + (f' ({number})' if number > 1 else ''))
+                try:
+                    collection.mkdir()
+                    break
+                except FileExistsError:
+                    number += 1
+            folder = collection
+            self._update(job_id, {'folder': str(folder), 'collection_title': folder.name})
+        for source in sources:
+            stem = re.sub(r'^\d{3,} - ', '', source.stem) or 'Untitled video'
+            number = 1
+            while True:
+                suffix = f' ({number})' if number > 1 else ''
+                path = folder / f'{stem}{suffix}{source.suffix}'
+                try:
+                    # Same-volume hard link publishes the complete file atomically,
+                    # and fails if another download or existing file owns the name.
+                    os.link(source, path)
+                    break
+                except FileExistsError:
+                    number += 1
+            files.append(dict(name=path.name, size=path.stat().st_size,
+                              kind='photo' if path.suffix.lower() in PHOTO_EXTENSIONS else 'video',
+                              url=f'/files/{job_id}/{quote(path.name)}'))
+            self._update(job_id, {'files': files.copy()})
+            with self.lock:
+                self._save()
 
     def _work(self):
         while True:
@@ -168,18 +247,23 @@ class DownloadManager:
             if job_id is None:
                 return
             job = self.get(job_id)
-            folder = self.destination / job_id
-            folder.mkdir(exist_ok=True)
             error = None
+            files = []
             self._update(job_id, {'status': 'reading'})
             try:
-                self.downloader(job['url'], folder, job['browser'],
-                                lambda event: self._update(job_id, event))
+                folder = self.folder(job_id)
+                folder.mkdir(parents=True, exist_ok=True)
+                with tempfile.TemporaryDirectory(prefix='.download-', dir=folder) as temporary:
+                    staging = Path(temporary)
+                    try:
+                        self.downloader(job['url'], staging, job['browser'],
+                                        lambda event: self._update(job_id, event))
+                    finally:
+                        self._publish_files(job_id, staging, files)
             except Exception as exc:
                 error = str(exc)[:1000]
-            files = self._files(job_id)
             if not files and not error:
-                error = 'No downloadable video found. This post may contain only photos.'
+                error = 'No downloadable photos or videos found.'
             self._update(job_id, dict(status='error' if error else 'complete', error=error,
                                      files=files, progress=100 if not error else self.get(job_id)['progress']))
             with self.lock:
@@ -190,11 +274,12 @@ class DownloadManager:
             raise FileNotFoundError(name)
         try:
             job = self.get(job_id)
+            folder = self.folder(job_id)
         except KeyError:
             raise FileNotFoundError(name) from None
-        path = self.destination / job_id / name
+        path = folder / name
         if (name not in [f['name'] for f in job.get('files', [])] or path.is_symlink() or
-                path.resolve().parent != (self.destination / job_id).resolve() or not path.is_file()):
+                path.resolve().parent != folder or not path.is_file()):
             raise FileNotFoundError(name)
         return path
 
@@ -265,7 +350,7 @@ def create_server(manager, port=8765):
                         while block := stream.read(1024 * 1024):
                             self.wfile.write(block)
                 except (FileNotFoundError, ValueError):
-                    self.respond(404, {'error': 'Video file not found.'})
+                    self.respond(404, {'error': 'Media file not found.'})
             else:
                 self.respond(404, {'error': 'Not found.'})
 
@@ -283,13 +368,15 @@ def create_server(manager, port=8765):
                     self.respond(202, manager.submit(body.get('url'), body.get('browser', '')))
                 elif self.path == '/api/open-folder':
                     folder = manager.destination
+                    reveal = None
                     if body.get('id'):
-                        manager.get(body['id'])
-                        folder = folder / body['id']
+                        folder = manager.folder(body['id'])
+                        files = manager.get(body['id']).get('files', [])
+                        if files:
+                            reveal = manager.file(body['id'], files[0]['name'])
                     if sys.platform == 'darwin':
-                        subprocess.run(['open', str(folder)], check=True)
+                        subprocess.run(['open', '-R', str(reveal)] if reveal else ['open', str(folder)], check=True)
                     elif sys.platform == 'win32':
-                        import os
                         os.startfile(folder)
                     else:
                         subprocess.run(['xdg-open', str(folder)], check=True)
@@ -315,9 +402,9 @@ def is_running(port):
 
 
 def main():
-    parser = argparse.ArgumentParser(description='Local Instagram and TikTok video downloader')
+    parser = argparse.ArgumentParser(description='Local Instagram, TikTok, and YouTube media downloader')
     parser.add_argument('--port', type=int, default=8765)
-    parser.add_argument('--destination', default=str(Path.home() / 'Downloads' / 'Instagram'))
+    parser.add_argument('--destination', default=str(DEFAULT_DESTINATION))
     parser.add_argument('--no-browser', action='store_true')
     args = parser.parse_args()
     if is_running(args.port):
@@ -326,7 +413,12 @@ def main():
         if not args.no_browser:
             webbrowser.open(address)
         return 0
-    manager = DownloadManager(args.destination, ROOT / '.state' / 'history.json')
+    legacy = (Path.home() / 'Downloads' / 'Instagram'
+              if Path(args.destination).expanduser().resolve() in
+              (DEFAULT_DESTINATION.resolve(), (Path.home() / 'Downloads').resolve()) else None)
+    manager = DownloadManager(args.destination, ROOT / '.state' / 'history.json', legacy_destination=legacy)
+    for platform in ('TikTok', 'Instagram', 'YouTube'):
+        (manager.destination / platform).mkdir(exist_ok=True)
     try:
         server = create_server(manager, args.port)
     except OSError:
@@ -334,7 +426,7 @@ def main():
         print(f'Port {args.port} is busy. Try a different port with --port 8766.', file=sys.stderr)
         return 1
     address = f'http://127.0.0.1:{server.server_port}'
-    print(f'Video Downloader: {address}\nVideos: {manager.destination}\nPress Control-C to quit.', flush=True)
+    print(f'Video Downloader: {address}\nSaved files: {manager.destination}\nPress Control-C to quit.', flush=True)
     if not args.no_browser:
         webbrowser.open(address)
     try:

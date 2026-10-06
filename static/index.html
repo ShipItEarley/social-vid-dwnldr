@@ -16,15 +16,16 @@
       <span id="connection" class="connection">Connecting</span>
     </header>
     <section class="workspace" aria-labelledby="heading">
-      <p class="eyebrow">SAVE A VIDEO</p>
-      <h1 id="heading">Paste the link.<br>Keep the video.</h1>
-      <p class="intro">Download Instagram Reels and TikTok videos to your Mac.</p>
+      <p class="eyebrow">SAVE VIDEOS &amp; PHOTOS</p>
+      <h1 id="heading">Paste the link.<br>Keep the moment.</h1>
+      <p class="intro">Save Instagram photos, Reels and stories, TikTok videos and slideshows, and YouTube videos to your Mac.</p>
       <form id="download-form">
-        <label for="url">Instagram or TikTok link</label>
+        <label for="url">Instagram, TikTok, or YouTube link</label>
         <div class="input-row">
-          <input id="url" name="url" type="text" inputmode="url" placeholder="Paste an Instagram or TikTok video link" required autocomplete="off" spellcheck="false">
-          <button id="submit" type="submit" disabled>Download video <span aria-hidden="true">↓</span></button>
+          <input id="url" name="url" type="text" inputmode="url" placeholder="Paste a video, photo, or story link" aria-describedby="link-help" required autocomplete="off" spellcheck="false">
+          <button id="submit" type="submit" disabled>Download <span aria-hidden="true">↓</span></button>
         </div>
+        <p id="link-help" class="session-note">TikTok slideshows get their own titled folder. Instagram posts save photos and videos; full story links save the selected story. YouTube Shorts and share links work too.</p>
         <div class="form-options">
           <div class="session-option">
             <label for="browser">Session</label>
@@ -37,20 +38,20 @@
               <option value="edge">Use Edge login</option>
             </select>
           </div>
-          <span id="session-help">If a login is needed, choose the browser you’re signed into.</span>
+          <span id="session-help">For Instagram stories or private posts, choose the browser you’re signed into.</span>
         </div>
         <p id="session-note" class="session-note" hidden>The selected browser’s session cookies will be read locally for this download.</p>
         <p id="form-error" class="form-error" role="alert" hidden></p>
       </form>
       <div class="destination-row">
-        <span><span class="folder-icon" aria-hidden="true">↳</span> Save location <strong id="destination">Downloads / Instagram</strong></span>
+        <span><span class="folder-icon" aria-hidden="true">↳</span> Save location <strong id="destination">Documents / Video-Download</strong><span class="save-help">TikTok, Instagram, and YouTube folders · Slideshows grouped by title</span></span>
         <button class="text-button" id="open-folder" type="button" disabled>Open folder <span aria-hidden="true">↗</span></button>
       </div>
     </section>
     <section class="history" aria-labelledby="history-heading">
-      <div class="section-heading"><h2 id="history-heading">Recent downloads</h2><span id="count">0 videos</span></div>
+      <div class="section-heading"><h2 id="history-heading">Recent downloads</h2><span id="count">0 files</span></div>
       <div id="jobs"></div>
-      <div id="empty" class="empty"><span class="empty-icon" aria-hidden="true">↓</span><p>Your downloads will appear here.</p><span>Paste a link above to save your first video.</span></div>
+      <div id="empty" class="empty"><span class="empty-icon" aria-hidden="true">↓</span><p>Your downloads will appear here.</p><span>Paste a link above to save your first video or slideshow.</span></div>
     </section>
     <footer><span>Runs on your Mac</span><span>Original available quality · Local files</span></footer>
   </main>

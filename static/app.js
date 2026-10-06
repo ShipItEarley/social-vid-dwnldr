@@ -40,22 +40,31 @@ function render(jobs) {
   if (signature === nextSignature) return;
   signature = nextSignature;
   document.querySelector('#empty').hidden = jobs.length > 0;
-  const total = jobs.reduce((sum, job) => sum + job.files.length, 0);
-  document.querySelector('#count').textContent = `${total} video${total === 1 ? '' : 's'}`;
+  const files = jobs.flatMap(job => job.files);
+  const photos = files.filter(file => file.kind === 'photo' || /\.(jpe?g|png|webp)$/i.test(file.name)).length;
+  const videos = files.length - photos;
+  document.querySelector('#count').textContent = [
+    videos ? `${videos} video${videos === 1 ? '' : 's'}` : '',
+    photos ? `${photos} photo${photos === 1 ? '' : 's'}` : ''
+  ].filter(Boolean).join(' · ') || '0 files';
   const rows = jobs.map(job => {
     const row = node('article', 'job');
     row.append(node('div', 'job-icon', job.status === 'complete' ? '✓' : job.status === 'error' ? '!' : '↓'));
     const detail = node('div', 'job-detail');
-    const shortcode = new URL(job.url).pathname.split('/').filter(Boolean).pop();
-    const site = new URL(job.url).hostname.endsWith('tiktok.com') ? 'TikTok' : 'Instagram';
-    detail.append(node('p', 'job-title', job.files.length === 1 ? job.files[0].name : `${site} · ${shortcode}`));
+    const url = new URL(job.url);
+    const site = url.hostname === 'www.youtube.com' ? 'YouTube' : url.hostname.endsWith('tiktok.com') ? 'TikTok' : 'Instagram';
+    const shortcode = site === 'YouTube' ? url.searchParams.get('v') : url.pathname.split('/').filter(Boolean).pop();
+    detail.append(node('p', 'job-title', job.collection_title || (job.files.length === 1 ? job.files[0].name : `${site} · ${shortcode}`)));
     const source = node('a', 'job-link', job.url.replace('https://www.', ''));
     source.href = job.url;
     source.target = '_blank';
     source.rel = 'noreferrer';
     detail.append(source);
     const active = ['queued', 'reading', 'downloading'].includes(job.status);
-    const statuses = {queued: 'Queued', reading: `Reading ${site} link…`, downloading: `Downloading · ${Math.round(job.progress)}%`, complete: 'Saved to your Mac'};
+    const photoStatus = job.total_files
+      ? `Downloading ${job.media_type === 'photo' ? 'photos' : 'files'} · ${job.completed_files || 0} of ${job.total_files} saved` : '';
+    const savedStatus = job.media_type === 'photo' ? `${job.files.length} photo${job.files.length === 1 ? '' : 's'} saved to your Mac` : 'Saved to your Mac';
+    const statuses = {queued: 'Queued', reading: `Reading ${site} link…`, downloading: photoStatus || `Downloading · ${Math.round(job.progress)}%`, complete: savedStatus};
     const status = node('p', 'job-status' + (job.status === 'error' ? ' error' : ''), job.error || statuses[job.status]);
     status.setAttribute('role', 'status');
     detail.append(status);
