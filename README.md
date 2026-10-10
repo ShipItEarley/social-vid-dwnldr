@@ -121,3 +121,7 @@ Restart the app after updating. The download engine is [yt-dlp](https://github.c
 The server binds only to `127.0.0.1`. Downloads go directly from the platform's servers to your computer. The app does not use an external download service.
 
 History lives in `.state/history.json`. Virtual environments, history, credentials files, caches, and downloaded media are excluded from Git. Source code, static assets, launchers, and documentation are the repository contents.
+
+## License
+
+MIT. See [LICENSE](LICENSE).
