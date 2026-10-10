@@ -95,8 +95,35 @@ class InstagramMediaTests(unittest.TestCase):
         self.assertEqual([item['name'] for item in result['files']], [
             'A day by the sea - 01.png', 'A day by the sea - 02.png', 'A day by the sea - 03.mp4', 'A day by the sea - 04.png'])
         self.assertEqual([item['kind'] for item in result['files']], ['photo', 'photo', 'video', 'photo'])
+        self.assertEqual(Path(result['folder']), manager.destination / 'Instagram' / 'A day by the sea')
+        self.assertEqual(len(list((manager.destination / 'Instagram').iterdir())), 1)
         video = manager.file(result['id'], result['files'][2]['name'])
         self.assertEqual(video.read_bytes(), (self.root / 'video.mp4').read_bytes())
+
+    def test_photo_and_video_carousels_get_caption_folders(self):
+        for photo in (True, False):
+            with self.subTest(photo=photo):
+                product = self.item()
+                product.update(media_type=8, carousel_media=[self.item(1001, photo=photo), self.item(1002, photo=photo)])
+                manager, result = self.run_download('https://www.instagram.com/p/ABC/', product=product)
+                self.assertEqual(result['status'], 'complete', result.get('error'))
+                folder = manager.destination / 'Instagram' / 'A day by the sea'
+                self.assertEqual(Path(result['folder']), folder)
+                extension = 'png' if photo else 'mp4'
+                self.assertEqual([item['name'] for item in result['files']],
+                                 [f'A day by the sea - {index:02d}.{extension}' for index in (1, 2)])
+                expected = self.photo if photo else (self.root / 'video.mp4').read_bytes()
+                for item in result['files']:
+                    saved = manager.file(result['id'], item['name'])
+                    self.assertEqual(saved.parent, folder)
+                    self.assertEqual(saved.read_bytes(), expected)
+
+    def test_carousel_without_caption_uses_creator_for_folder_name(self):
+        product = self.item()
+        product.update(caption=None, media_type=8, carousel_media=[self.item(1001), self.item(1002)])
+        manager, result = self.run_download('https://www.instagram.com/p/ABC/', product=product)
+        self.assertEqual(result['status'], 'complete', result.get('error'))
+        self.assertEqual(Path(result['folder']), manager.destination / 'Instagram' / 'Video by Creator')
 
     def test_full_story_link_saves_only_the_selected_photo(self):
         manager, result = self.run_download('https://www.instagram.com/stories/creator/1002/',
@@ -107,10 +134,11 @@ class InstagramMediaTests(unittest.TestCase):
         self.assertEqual(manager.file(result['id'], result['files'][0]['name']).read_bytes(), self.photo)
 
     def test_story_collection_saves_photos_and_videos(self):
-        _, result = self.run_download('https://www.instagram.com/stories/creator/',
-                                      stories=[self.item(1001), self.item(1002, photo=False)])
+        manager, result = self.run_download('https://www.instagram.com/stories/creator/',
+                                           stories=[self.item(1001), self.item(1002, photo=False)])
         self.assertEqual(result['status'], 'complete', result.get('error'))
         self.assertEqual([item['kind'] for item in result['files']], ['photo', 'video'])
+        self.assertEqual(Path(result['folder']), manager.destination / 'Instagram')
 
     def test_expired_specific_story_is_an_actionable_error(self):
         _, result = self.run_download('https://www.instagram.com/stories/creator/9999/', stories=[self.item()])
@@ -121,10 +149,21 @@ class InstagramMediaTests(unittest.TestCase):
     def test_missing_photo_does_not_stop_other_carousel_items(self):
         product = self.item()
         product.update(media_type=8, carousel_media=[self.item(1001), self.item(1002, broken=True), self.item(1003)])
-        _, result = self.run_download('https://www.instagram.com/p/ABC/', product=product)
+        manager, result = self.run_download('https://www.instagram.com/p/ABC/', product=product)
         self.assertEqual(result['status'], 'error')
         self.assertIn('Saved 2 of 3 items', result['error'])
         self.assertEqual([item['name'] for item in result['files']], ['A day by the sea - 01.png', 'A day by the sea - 03.png'])
+        self.assertEqual(Path(result['folder']), manager.destination / 'Instagram' / 'A day by the sea')
+
+    def test_partial_carousel_with_one_saved_photo_still_gets_a_folder(self):
+        product = self.item()
+        product.update(media_type=8, carousel_media=[self.item(1001, broken=True), self.item(1002)])
+        manager, result = self.run_download('https://www.instagram.com/p/ABC/', product=product)
+        self.assertEqual(result['status'], 'error')
+        self.assertIn('Saved 1 of 2 items', result['error'])
+        self.assertEqual(Path(result['folder']), manager.destination / 'Instagram' / 'A day by the sea')
+        self.assertEqual([item['name'] for item in result['files']], ['A day by the sea - 02.png'])
+        self.assertEqual(manager.file(result['id'], result['files'][0]['name']).read_bytes(), self.photo)
 
     def test_inaccessible_video_does_not_save_its_cover_as_a_photo(self):
         item = self.item(photo=False)

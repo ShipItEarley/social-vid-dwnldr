@@ -24,6 +24,12 @@ class ShortTitlePP(PostProcessor):
 def friendly_error(error, site='Instagram'):
     message = re.sub(r'\x1b\[[0-9;]*m', '', str(error))
     lower = message.lower()
+    if site == 'Twitter' and any(word in lower for word in ('no video', 'no formats', 'requested format', 'not a video')):
+        return ('No downloadable video was found in this X/Twitter post. Open the post in your browser '
+                'and check that it contains a video. For a protected post, choose your signed-in browser.')
+    if site == 'Twitter' and any(word in lower for word in ('deleted', 'not found', 'unavailable')):
+        return ('This X/Twitter post or video is unavailable. Check that the link still opens in your browser. '
+                'For a protected post, choose your signed-in browser; deleted posts cannot be downloaded.')
     if site == 'YouTube' and any(word in lower for word in ('no video', 'no formats', 'requested format')):
         return ('No downloadable YouTube video format was found. Update Downloader, ensure Deno or Node.js 22+ '
                 'and FFmpeg are installed, then retry. If the video needs a login, choose your signed-in browser.')
@@ -112,6 +118,9 @@ def download_options(folder, browser, progress, url=''):
     if site_name(url) == 'YouTube':
         options.update(noplaylist=True, match_filter=reject_live_video,
                        js_runtimes={'deno': {}, 'node': {}})
+    if site_name(url) == 'Twitter':
+        # Honor /video/N when supplied; a plain post link still saves all its videos.
+        options['noplaylist'] = True
     return options
 
 

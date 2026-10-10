@@ -14,6 +14,8 @@ def site_name(url):
         return 'YouTube'
     if host in ('www.tiktok.com', 'vm.tiktok.com', 'vt.tiktok.com'):
         return 'TikTok'
+    if host == 'x.com':
+        return 'Twitter'
     return 'Instagram'
 
 

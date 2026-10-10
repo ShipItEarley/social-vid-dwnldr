@@ -123,6 +123,35 @@ class URLTests(unittest.TestCase):
         self.assertEqual(self.accepted(' tiktok.com/@willgoviral/photo/7687004136411286798/?photo_id=2 '),
                          'https://www.tiktok.com/@willgoviral/photo/7687004136411286798')
 
+    def test_twitter_and_x_post_links_normalize_and_preserve_selected_video(self):
+        post_id = '2107023055532810720'
+        for host in ('x.com', 'www.x.com', 'm.x.com', 'mobile.x.com',
+                     'twitter.com', 'www.twitter.com', 'm.twitter.com', 'mobile.twitter.com'):
+            for path in (f'/spwfeijen/status/{post_id}', f'/i/web/status/{post_id}',
+                         f'/i/status/{post_id}', f'/statuses/{post_id}'):
+                for suffix in ('', '/video/2'):
+                    with self.subTest(host=host, path=path, suffix=suffix):
+                        expected_path = path.replace('/statuses/', '/i/web/status/')
+                        self.assertEqual(self.accepted(f' http://{host.upper()}{path}{suffix}/?s=20#tracking '),
+                                         f'https://x.com{expected_path}{suffix}')
+        self.assertEqual(self.accepted(f'x.com/spwfeijen/status/{post_id}?s=20'),
+                         f'https://x.com/spwfeijen/status/{post_id}')
+
+    def test_twitter_rejects_nonposts_malformed_urls_and_false_hosts(self):
+        for url in (
+            'https://x.com/', 'https://x.com/spwfeijen', 'https://x.com/home',
+            'https://x.com/search?q=video', 'https://x.com/i/spaces/abc',
+            'https://twitter.com/creator/status/not-a-number', 'https://x.com/creator/status/',
+            'https://x.com/creator/status/123/extra', 'https://x.com/creator/status/123/video/0',
+            'https://x.com/creator/status/123/video/-1', 'https://x.com/creator/status/123/video/2/extra',
+            'https://x.com/creator/status/123/photo/1', 'https://x.com/creator/status/123abc',
+            'https://x.com.evil.com/creator/status/123', 'https://twitter.com.evil.com/creator/status/123',
+            'https://x.com@evil.com/creator/status/123', 'https://evil.com@x.com/creator/status/123',
+            'https://x.com:9000/creator/status/123', 'ftp://x.com/creator/status/123',
+        ):
+            with self.subTest(url=url), self.assertRaises(ValueError):
+                self.normalize(url)
+
     def test_rejects_tiktok_profiles_malformed_posts_and_false_hosts(self):
         for url in ('https://www.tiktok.com/@creator', 'https://www.tiktok.com/@creator/live',
                     'https://www.tiktok.com/@creator/photo/not-a-number',
@@ -284,19 +313,25 @@ class DownloadTests(unittest.TestCase):
         self.assertIn('1 of 2', result['error'])
         self.assertEqual([file['name'] for file in result['files']], ['Slideshow - 01.jpg'])
 
-    def test_slideshow_folders_are_named_safely_and_never_combined(self):
+    def test_collection_folders_are_named_safely_and_never_combined(self):
         def download(url, folder, browser, progress):
             progress({'collection_title': '../A weekend away', 'media_type': 'photo'})
             (folder / '001 - A weekend away - 01.jpg').write_bytes(b'photo')
         manager = self.manager(download)
-        results = [self.wait(manager, manager.submit('https://www.tiktok.com/@creator/photo/123')['id']) for _ in range(2)]
-        for result, name in zip(results, ('A weekend away', 'A weekend away (2)')):
-            self.assertEqual(result['status'], 'complete')
-            self.assertEqual(Path(result['folder']), manager.destination / 'TikTok' / name)
-            self.assertEqual(manager.file(result['id'], result['files'][0]['name']).read_bytes(), b'photo')
+        results = []
+        for url, platform in (('https://www.tiktok.com/@creator/photo/123', 'TikTok'),
+                              ('https://www.instagram.com/p/ABC/', 'Instagram')):
+            for name in ('A weekend away', 'A weekend away (2)'):
+                result = self.wait(manager, manager.submit(url)['id'])
+                results.append(result)
+                self.assertEqual(result['status'], 'complete')
+                self.assertEqual(Path(result['folder']), manager.destination / platform / name)
+                self.assertEqual(manager.file(result['id'], result['files'][0]['name']).read_bytes(), b'photo')
         manager.close()
         restarted = self.manager(download)
-        self.assertEqual(restarted.get(results[0]['id']), results[0])
+        for result in results:
+            self.assertEqual(restarted.get(result['id']), result)
+            self.assertEqual(restarted.file(result['id'], result['files'][0]['name']).read_bytes(), b'photo')
 
     def test_individual_photos_stay_directly_in_platform_folder(self):
         def download(url, folder, browser, progress):
@@ -345,6 +380,7 @@ class DownloadTests(unittest.TestCase):
             ('https://instagram.com/reel/ABC/', 'Instagram'),
             ('https://youtu.be/jNQXAC9IVRw', 'YouTube'),
             ('https://vm.tiktok.com/Zexample/', 'TikTok'),
+            ('https://twitter.com/spwfeijen/status/2107023055532810720?s=20', 'Twitter'),
         ):
             with self.subTest(platform=platform):
                 job = manager.submit(url)
@@ -475,9 +511,43 @@ class HTTPTests(unittest.TestCase):
         self.assertIn(b'TikTok', page)
         self.assertIn(b'YouTube', page)
         self.assertIn(b'Shorts', page)
+        self.assertIn(b'X/Twitter', page)
+        self.assertIn(b'twitter.com', page)
         _, _, script = self.request('GET', '/app.js')
         self.assertIn(b'TikTok', script)
         self.assertIn(b'YouTube', script)
+        self.assertIn(b'X/Twitter', script)
+
+    def test_twitter_post_can_be_saved_and_reloaded_through_api(self):
+        status, _, body = self.request('POST', '/api/downloads',
+            json.dumps({'url': 'https://twitter.com/spwfeijen/status/2107023055532810720?s=20',
+                        'browser': 'firefox'}), self.headers())
+        self.assertEqual(status, 202)
+        job = json.loads(body)
+        self.assertEqual(job['url'], 'https://x.com/spwfeijen/status/2107023055532810720')
+        self.assertEqual(job['browser'], 'firefox')
+        for _ in range(100):
+            result = self.manager.get(job['id'])
+            if result['status'] in ('complete', 'error'):
+                break
+            time.sleep(.01)
+        self.assertEqual(result['status'], 'complete', result['error'])
+        self.assertEqual(Path(result['folder']), self.manager.destination / 'Twitter')
+        status, headers, body = self.request('GET', result['files'][0]['url'])
+        self.assertEqual(status, 200)
+        self.assertEqual(headers['Content-Type'], 'video/mp4')
+        self.assertEqual(body, b'local video')
+        with patch('app.sys.platform', 'darwin'), patch('app.subprocess.run') as run:
+            status, _, _ = self.request('POST', '/api/open-folder', json.dumps({'id': job['id']}), self.headers())
+        self.assertEqual(status, 200)
+        run.assert_called_once_with(['open', '-R', str(self.manager.destination / 'Twitter' / 'video.mp4')], check=True)
+        self.manager.close()
+        restarted = app.DownloadManager(self.manager.destination, self.manager.history_path, lambda *args: None)
+        try:
+            self.assertEqual(restarted.get(job['id']), result)
+            self.assertEqual(restarted.file(job['id'], 'video.mp4').read_bytes(), b'local video')
+        finally:
+            restarted.close()
 
     def test_relaunch_recognizes_existing_app(self):
         self.assertTrue(hasattr(app, 'is_running'), 'Launcher instance detection is missing')

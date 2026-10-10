@@ -52,8 +52,12 @@ function render(jobs) {
     row.append(node('div', 'job-icon', job.status === 'complete' ? '✓' : job.status === 'error' ? '!' : '↓'));
     const detail = node('div', 'job-detail');
     const url = new URL(job.url);
-    const site = url.hostname === 'www.youtube.com' ? 'YouTube' : url.hostname.endsWith('tiktok.com') ? 'TikTok' : 'Instagram';
-    const shortcode = site === 'YouTube' ? url.searchParams.get('v') : url.pathname.split('/').filter(Boolean).pop();
+    const site = url.hostname === 'www.youtube.com' ? 'YouTube'
+      : url.hostname.endsWith('tiktok.com') ? 'TikTok'
+      : url.hostname === 'x.com' ? 'X/Twitter' : 'Instagram';
+    const shortcode = site === 'YouTube' ? url.searchParams.get('v')
+      : site === 'X/Twitter' ? url.pathname.match(/\/status\/(\d+)/)?.[1]
+      : url.pathname.split('/').filter(Boolean).pop();
     detail.append(node('p', 'job-title', job.collection_title || (job.files.length === 1 ? job.files[0].name : `${site} · ${shortcode}`)));
     const source = node('a', 'job-link', job.url.replace('https://www.', ''));
     source.href = job.url;

@@ -45,7 +45,9 @@ def download_instagram(downloader, url, folder, emit, progress_state):
                            'No downloadable photos or videos found in this Instagram post.')
     total = len(entries)
     kind = 'photo' if all('photo_urls' in entry for entry in entries) else 'media'
-    emit({'status': 'downloading', 'media_type': kind, 'total_files': total, 'completed_files': 0, 'progress': 0})
+    emit({'status': 'downloading', 'media_type': kind, 'total_files': total,
+          'collection_title': short_title(info) if total > 1 and not story else None,
+          'completed_files': 0, 'progress': 0})
     saved = 0
     failed = []
     progress_state['total'] = total

@@ -31,7 +31,7 @@ BROWSERS = ('', 'chrome', 'safari', 'firefox', 'edge', 'brave')
 
 def normalize_url(value):
     if not isinstance(value, str) or not value.strip() or len(value) > 2048:
-        raise ValueError('Paste an Instagram, TikTok, or YouTube link.')
+        raise ValueError('Paste an Instagram, TikTok, YouTube, or X/Twitter link.')
     value = value.strip()
     if '://' not in value:
         value = 'https://' + value
@@ -41,8 +41,17 @@ def normalize_url(value):
     tiktok_hosts = ('tiktok.com', 'www.tiktok.com', 'vm.tiktok.com', 'vt.tiktok.com')
     youtube_hosts = ('youtube.com', 'www.youtube.com', 'm.youtube.com', 'music.youtube.com',
                      'youtu.be', 'www.youtu.be', 'youtube-nocookie.com', 'www.youtube-nocookie.com')
-    if parsed.scheme not in ('http', 'https') or host not in instagram_hosts + tiktok_hosts + youtube_hosts:
-        raise ValueError('Use a link from instagram.com, tiktok.com, youtube.com, or youtu.be.')
+    twitter_hosts = ('x.com', 'www.x.com', 'm.x.com', 'mobile.x.com',
+                     'twitter.com', 'www.twitter.com', 'm.twitter.com', 'mobile.twitter.com')
+    if parsed.scheme not in ('http', 'https') or host not in instagram_hosts + tiktok_hosts + youtube_hosts + twitter_hosts:
+        raise ValueError('Use a link from instagram.com, tiktok.com, youtube.com, youtu.be, x.com, or twitter.com.')
+    if host in twitter_hosts:
+        match = re.fullmatch(r'/(?:([A-Za-z0-9_]{1,15}|i/web)/status|statuses)/([0-9]+)(?:/video/([1-9][0-9]*))?/?', parsed.path)
+        if not match:
+            raise ValueError('Use an X/Twitter post link containing /status/ and its ID, rather than a profile, photo, or Space link.')
+        username, post_id, video_index = match.groups()
+        suffix = f'/video/{video_index}' if video_index else ''
+        return f'https://x.com/{username or "i/web"}/status/{post_id}{suffix}'
     if host in youtube_hosts:
         video_id = ''
         if host in ('youtu.be', 'www.youtu.be'):
@@ -209,7 +218,7 @@ class DownloadManager:
                    if not source.is_symlink() and source.is_file()
                    and source.suffix.lower() in MEDIA_EXTENSIONS and source.stat().st_size > 0]
         job = self.get(job_id)
-        if sources and job.get('collection_title') and site_name(job['url']) == 'TikTok':
+        if sources and job.get('collection_title'):
             title = short_title({'title': job['collection_title']})
             number = 1
             while True:
@@ -402,7 +411,7 @@ def is_running(port):
 
 
 def main():
-    parser = argparse.ArgumentParser(description='Local Instagram, TikTok, and YouTube media downloader')
+    parser = argparse.ArgumentParser(description='Local Instagram, TikTok, YouTube, and X/Twitter media downloader')
     parser.add_argument('--port', type=int, default=8765)
     parser.add_argument('--destination', default=str(DEFAULT_DESTINATION))
     parser.add_argument('--no-browser', action='store_true')
@@ -417,7 +426,7 @@ def main():
               if Path(args.destination).expanduser().resolve() in
               (DEFAULT_DESTINATION.resolve(), (Path.home() / 'Downloads').resolve()) else None)
     manager = DownloadManager(args.destination, ROOT / '.state' / 'history.json', legacy_destination=legacy)
-    for platform in ('TikTok', 'Instagram', 'YouTube'):
+    for platform in ('TikTok', 'Instagram', 'YouTube', 'Twitter'):
         (manager.destination / platform).mkdir(exist_ok=True)
     try:
         server = create_server(manager, args.port)
