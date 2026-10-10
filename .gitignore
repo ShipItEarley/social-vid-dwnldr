@@ -21,3 +21,6 @@ cookies.txt
 *.m4v
 *.part
 *.ytdl
+
+# Local test suite (kept out of the repository)
+test_*.py

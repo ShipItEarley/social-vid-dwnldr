@@ -28,7 +28,7 @@ Documents/Video-Download/
 
 - Python 3.10 or newer.
 - macOS for the double-click launchers. The Python server can also run from a terminal on Linux or Windows.
-- FFmpeg is optional for merging separate video and audio streams, and required to run the video integration test.
+- FFmpeg is optional for merging separate video and audio streams.
 - For YouTube, install [Deno](https://docs.deno.com/runtime/getting_started/installation/) (2.3.0+) or [Node.js](https://nodejs.org/en/download/) (22+). The app enables both runtimes, preferring Deno. Its `yt-dlp[default]` dependency supplies the matching JavaScript challenge scripts; see [yt-dlp's YouTube setup guide](https://github.com/yt-dlp/yt-dlp/wiki/EJS). FFmpeg is strongly recommended because YouTube often serves video and audio separately.
 
 On macOS with Homebrew, `brew install deno ffmpeg` supplies the recommended YouTube tools. Restart the app after installing them.
@@ -116,20 +116,8 @@ Double-click **Update Downloader.command** on macOS, or run:
 
 Restart the app after updating. The download engine is [yt-dlp](https://github.com/yt-dlp/yt-dlp).
 
-## Tests
-
-With the dependencies and FFmpeg installed:
-
-```sh
-.venv/bin/python -m unittest -v test_app.py test_worker.py test_instagram.py test_twitter.py
-```
-
-Tests cover link validation, the Documents default, platform and collection folders, filename/folder collisions, legacy history, error handling, file isolation, local request protections, YouTube runtime and live-stream handling, and real local media transfers. Instagram fixtures cover single photos, photo/video/mixed carousel folders, creator-name fallback, specific story selection, story collections, expired stories, and incomplete downloads. Slideshow checks cover page metadata, original image bytes, ordering, mirror fallback, misleading file extensions, partial transfers, HTML responses, and image serving. Tests do not require platform accounts or fetch live social posts.
-
-X/Twitter fixtures exercise the real extractor with local MP4 transfers, including multiple videos, selection by media index in a mixed photo/video post, no-video errors, session forwarding, and persisted history with file serving and Finder actions.
-
 ## Local data
 
 The server binds only to `127.0.0.1`. Downloads go directly from the platform's servers to your computer. The app does not use an external download service.
 
-History lives in `.state/history.json`. Virtual environments, history, credentials files, caches, and downloaded media are excluded from Git. Source code, static assets, launchers, documentation, and tests are the repository contents.
+History lives in `.state/history.json`. Virtual environments, history, credentials files, caches, and downloaded media are excluded from Git. Source code, static assets, launchers, and documentation are the repository contents.
